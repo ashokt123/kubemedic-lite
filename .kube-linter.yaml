@@ -1,0 +1,7 @@
+checks:
+  addAllBuiltIn: false
+  exclude:
+    # Single-node demo cluster: probes and anti-affinity add noise without value here.
+    - no-liveness-probe
+    - no-readiness-probe
+    - no-anti-affinity

@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubemedic
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubemedic
+  namespace: kubemedic
+---
+# Least privilege: read pods/logs/events and write events + annotations, only in the watched namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubemedic
+  namespace: chaos
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "patch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubemedic
+  namespace: chaos
+subjects:
+  - kind: ServiceAccount
+    name: kubemedic
+    namespace: kubemedic
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubemedic
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubemedic
+  namespace: kubemedic
+data:
+  OLLAMA_URL: "http://host.k3d.internal:11434"  # Ollama on the Mac host, via k3d host alias
+  MODEL: "qwen2.5:1.5b"
+  WATCH_NAMESPACES: "chaos"
+  POLL_SECONDS: "20"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubemedic
+  namespace: kubemedic
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # singleton watcher: never run two at once (avoids duplicate diagnoses)
+  selector:
+    matchLabels:
+      app: kubemedic
+  template:
+    metadata:
+      labels:
+        app: kubemedic
+    spec:
+      serviceAccountName: kubemedic
+      containers:
+        - name: kubemedic
+          image: kubemedic:dev
+          imagePullPolicy: Never  # loaded via `k3d image import`
+          envFrom:
+            - configMapRef:
+                name: kubemedic
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}

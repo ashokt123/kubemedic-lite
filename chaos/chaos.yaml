@@ -1,0 +1,93 @@
+# Workloads that fail on purpose, one per common failure mode.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chaos
+---
+# CrashLoopBackOff: app exits because required config is missing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout-api
+  namespace: chaos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: checkout-api}
+  template:
+    metadata:
+      labels: {app: checkout-api}
+    spec:
+      containers:
+        - name: api
+          image: busybox:1.37
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "checkout-api v2.3 starting"
+              echo "loading config from environment"
+              echo "FATAL: required env var DATABASE_URL is not set"
+              exit 1
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 50m, memory: 32Mi}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+---
+# OOMKilled: allocates 200 MiB with a 64 MiB limit.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report-worker
+  namespace: chaos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: report-worker}
+  template:
+    metadata:
+      labels: {app: report-worker}
+    spec:
+      containers:
+        - name: worker
+          image: python:3.12-slim
+          command: ["python", "-c"]
+          args:
+            - print("report-worker loading monthly dataset into memory", flush=True); data = bytearray(200 * 1024 * 1024); print("done")
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+---
+# ImagePullBackOff: tag does not exist.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-frontend
+  namespace: chaos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: web-frontend}
+  template:
+    metadata:
+      labels: {app: web-frontend}
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.99.99-typo
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 50m, memory: 32Mi}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
